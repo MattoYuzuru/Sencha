@@ -3,7 +3,6 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
-    alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
 }
 
@@ -57,11 +56,13 @@ android {
 }
 
 dependencies {
-    implementation(libs.compose.runtime)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.ui)
-    implementation(libs.compose.uiToolingPreview)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.compose.foundation)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.uiToolingPreview)
+    implementation(libs.androidx.compose.materialIconsExtended)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodelCompose)
     implementation(libs.androidx.lifecycle.runtimeCompose)
@@ -69,7 +70,8 @@ dependencies {
     implementation(projects.shared.core.model)
     implementation(projects.shared.core.domain)
     implementation(projects.shared.core.data)
+    implementation(projects.shared.core.jobs)
     testImplementation(libs.kotlin.testJunit)
     testImplementation(libs.junit)
-    debugImplementation(libs.compose.uiTooling)
+    debugImplementation(libs.androidx.compose.uiTooling)
 }
