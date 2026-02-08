@@ -40,12 +40,12 @@ class InMemoryJobEngine(
         private val scope: CoroutineScope,
         private val clock: Clock,
     ) : JobHandle<T> {
-        private val snapshotFlow = MutableStateFlow(initialSnapshot())
+        override val id: JobId = definition.id
+        private val snapshotFlow = MutableStateFlow(initialSnapshot(definition.id))
         private val outputFlow = MutableSharedFlow<T>(extraBufferCapacity = 64)
         private val jobMutex = Mutex()
         private var runningJob = null as kotlinx.coroutines.Job?
 
-        override val id: JobId = definition.id
         override val snapshot = snapshotFlow.asStateFlow()
         override val output = outputFlow.asSharedFlow()
 
@@ -103,10 +103,10 @@ class InMemoryJobEngine(
             start()
         }
 
-        private fun initialSnapshot(): JobSnapshot {
+        private fun initialSnapshot(jobId: JobId): JobSnapshot {
             val now = clock.now()
             return JobSnapshot(
-                id = id,
+                id = jobId,
                 state = JobState.QUEUED,
                 createdAt = now,
                 updatedAt = now,
