@@ -1,53 +1,82 @@
 # Sencha
 
-Sencha is a Kotlin Multiplatform client (Android/iOS first) for local/remote AI models. The shared core is split by
-capability and targets offline-first execution with a job system and model manager.
+Sencha — мультиплатформенный клиент (Android/iOS) для локальной и удаленной работы с AI‑моделями. Основной фокус:
+offline‑first, job‑система, менеджер моделей.
 
-## Project Layout
+## Быстрый старт
 
-- `androidApp/` - Android application (Jetpack Compose UI).
-- `iosApp/` - iOS application (Xcode project, UIKit UI).
-- `shared/` - KMP umbrella framework for iOS (`Shared`) and shared dependencies.
-- `shared/core/model/` - Model capabilities and parameters.
-- `shared/core/domain/` - Use-cases.
-- `shared/core/data/` - Repositories and storage.
-- `shared/core/jobs/` - Job engine primitives.
-- `shared/core/security/` - Key management abstraction.
+### Android
 
-## Build Android APK
+Сборка APK:
 
-- macOS/Linux:
-  ```shell
-  ./gradlew :androidApp:assembleDebug
-  ```
-- Windows:
-  ```shell
-  .\gradlew.bat :androidApp:assembleDebug
-  ```
+```shell
+./gradlew :androidApp:assembleDebug
+```
 
-The APK will be at `androidApp/build/outputs/apk/debug/androidApp-debug.apk`.
+APK появится здесь: `androidApp/build/outputs/apk/debug/androidApp-debug.apk`.
 
-## Run Android App
-
-Open the project in Android Studio and run the `androidApp` configuration, or install via:
+Запуск из Android Studio: конфигурация `androidApp` или:
 
 ```shell
 ./gradlew :androidApp:installDebug
 ```
 
-## Run iOS App
+### iOS
 
-Open `iosApp/iosApp.xcodeproj` in Xcode (macOS only) and run the iOS target. Xcode will invoke Gradle to build
-and embed the `Shared` framework automatically.
+Откройте `iosApp/iosApp.xcodeproj` в Xcode и запустите таргет `iosApp`. Xcode сам вызовет Gradle и встроит
+`Shared`‑фреймворк.
 
-## Run Tests
+### Тесты
 
 ```shell
 ./gradlew test
 ```
 
-## Lint
+### Линт
 
 ```shell
 ./gradlew ktlintCheck detekt
 ```
+
+## Структура репозитория
+
+- `androidApp/` — Android приложение (Compose).
+- `iosApp/` — iOS приложение (UIKit).
+- `shared/` — KMP общий код.
+- `shared/core/model/` — capabilities и параметры моделей.
+- `shared/core/domain/` — use‑cases.
+- `shared/core/data/` — репозитории и хранилища.
+- `shared/core/jobs/` — job engine.
+- `shared/core/security/` — абстракции безопасности.
+
+## Примечания
+
+- `RemoteOllamaProvider` по умолчанию подключается к `http://localhost:11434`.
+- Для удаленных хостов требуется HTTPS/TLS.
+
+## Docs consulted
+
+- Apple HIG “Materials” (Liquid Glass): использовать стекло в функциональном слое (nav/tab bars), не в контенте;
+  соблюдать Reduce Transparency. Применено к навигации, таб‑бару и инпут‑бару, без многослойной прозрачности.
+  https://developer.apple.com/tutorials/data/design/human-interface-guidelines/materials.json
+- UIKit `UIVisualEffectView` / `UIBlurEffect`: размещать контент в `contentView`, не менять `alpha` эффекта.
+  Выбрали Blur‑материалы вместо ручной полупрозрачности, чтобы сохранить читабельность.
+  https://developer.apple.com/tutorials/data/documentation/uikit/uivisualeffectview.json
+  https://developer.apple.com/tutorials/data/documentation/uikit/uiblureffect.json
+- Kotlin Flow: стриминг и состояние через Flow/StateFlow вместо callback‑ов.
+  https://kotlinlang.org/docs/flow.html
+- Kotlin Serialization: сериализация моделей и capabilities.
+  https://kotlinlang.org/docs/serialization.html
+- Kotlin Time Clock/Instant: используем `kotlin.time.Clock`/`Instant` вместо deprecated `kotlinx.datetime.Clock`.
+  https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.time/-clock/
+  https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.time/-instant/
+- Kotlin Multiplatform: структура shared‑модулей и таргеты.
+  https://kotlinlang.org/docs/multiplatform.html
+- Ktor client responses: чтение стриминга через `ByteReadChannel`, а не `bodyAsText()`.
+  https://ktor.io/docs/client-responses.html
+- Ktor ByteReadChannel line APIs: заменили deprecated `readUTF8Line` на `readLine` по исходникам Ktor.
+  https://raw.githubusercontent.com/ktorio/ktor/main/ktor-io/common/src/io/ktor/utils/io/ByteReadChannelOperations.kt
+- Ollama API: используем `/api/tags` и `/api/chat` со стримингом.
+  https://raw.githubusercontent.com/ollama/ollama/main/docs/api.md
+- AndroidX Compose BOM: фиксируем версии Compose через BOM и используем AndroidX‑артефакты.
+  https://developer.android.com/jetpack/compose/bom
