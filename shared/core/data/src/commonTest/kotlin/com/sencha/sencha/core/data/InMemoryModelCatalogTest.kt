@@ -1,6 +1,9 @@
 package com.sencha.sencha.core.data
 
 import com.sencha.sencha.core.model.ModelCapability
+import com.sencha.sencha.core.domain.ModelEntry
+import com.sencha.sencha.core.domain.ModelKey
+import com.sencha.sencha.core.domain.ModelProviderId
 import com.sencha.sencha.core.model.ModelDescriptor
 import com.sencha.sencha.core.model.ModelId
 import kotlin.test.Test
@@ -16,9 +19,13 @@ class InMemoryModelCatalogTest {
             displayName = "Local LLM",
             capabilities = setOf(ModelCapability.LLM),
         )
+        val entry = ModelEntry(
+            key = ModelKey(ModelProviderId("local"), model.id),
+            descriptor = model,
+        )
 
-        catalog.upsert(model)
+        catalog.upsert(entry)
 
-        assertEquals(model, catalog.findById(model.id))
+        assertEquals(entry, catalog.findByKey(entry.key))
     }
 }

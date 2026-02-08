@@ -29,6 +29,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(projects.shared.core.model)
+            implementation(projects.shared.core.jobs)
+            implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

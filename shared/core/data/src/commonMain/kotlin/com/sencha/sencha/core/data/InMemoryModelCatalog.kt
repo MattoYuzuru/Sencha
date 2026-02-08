@@ -1,19 +1,20 @@
 package com.sencha.sencha.core.data
 
 import com.sencha.sencha.core.domain.ModelCatalog
-import com.sencha.sencha.core.model.ModelDescriptor
-import com.sencha.sencha.core.model.ModelId
+import com.sencha.sencha.core.domain.ModelEntry
+import com.sencha.sencha.core.domain.ModelKey
 
 class InMemoryModelCatalog(
-    initialModels: List<ModelDescriptor> = emptyList(),
+    initialModels: List<ModelEntry> = emptyList(),
 ) : ModelCatalog {
-    private val modelsById = initialModels.associateBy { it.id }.toMutableMap()
+    private val modelsByKey = initialModels.associateBy { it.key }.toMutableMap()
 
-    override fun listModels(): List<ModelDescriptor> = modelsById.values.sortedBy { it.displayName }
+    override fun listModels(): List<ModelEntry> =
+        modelsByKey.values.sortedBy { it.descriptor.displayName }
 
-    override fun findById(id: ModelId): ModelDescriptor? = modelsById[id]
+    override fun findByKey(key: ModelKey): ModelEntry? = modelsByKey[key]
 
-    fun upsert(model: ModelDescriptor) {
-        modelsById[model.id] = model
+    fun upsert(model: ModelEntry) {
+        modelsByKey[model.key] = model
     }
 }

@@ -15,19 +15,23 @@ class ResolveModelUseCaseTest {
             displayName = "Local LLM",
             capabilities = setOf(ModelCapability.LLM),
         )
-        val catalog = StubCatalog(listOf(model))
+        val entry = ModelEntry(
+            key = ModelKey(ModelProviderId("local"), model.id),
+            descriptor = model,
+        )
+        val catalog = StubCatalog(listOf(entry))
         val useCase = ResolveModelUseCase(catalog)
 
-        val result = useCase.execute(model.id)
+        val result = useCase.execute(entry.key)
 
-        assertEquals(model, result)
+        assertEquals(entry, result)
     }
 
     private class StubCatalog(
-        private val models: List<ModelDescriptor>
+        private val models: List<ModelEntry>
     ) : ModelCatalog {
-        override fun listModels(): List<ModelDescriptor> = models
+        override fun listModels(): List<ModelEntry> = models
 
-        override fun findById(id: ModelId): ModelDescriptor? = models.firstOrNull { it.id == id }
+        override fun findByKey(key: ModelKey): ModelEntry? = models.firstOrNull { it.key == key }
     }
 }
