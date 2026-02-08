@@ -10,7 +10,7 @@ kotlin {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_11)
         }
-        namespace = "com.sencha.sencha.shared"
+        namespace = "com.sencha.sencha.core.data"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
     }
@@ -21,23 +21,14 @@ kotlin {
         iosX64()
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
-            baseName = "Shared"
+            baseName = "SenchaCoreData"
             isStatic = true
-            export(projects.shared.core.model)
-            export(projects.shared.core.domain)
-            export(projects.shared.core.data)
-            export(projects.shared.core.jobs)
-            export(projects.shared.core.security)
         }
     }
 
     sourceSets {
         commonMain.dependencies {
-            api(projects.shared.core.model)
-            api(projects.shared.core.domain)
-            api(projects.shared.core.data)
-            api(projects.shared.core.jobs)
-            api(projects.shared.core.security)
+            implementation(projects.shared.core.domain)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

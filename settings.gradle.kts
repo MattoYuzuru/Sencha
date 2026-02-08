@@ -28,5 +28,10 @@ dependencyResolutionManagement {
     }
 }
 
-include(":composeApp")
+include(":androidApp")
 include(":shared")
+include(":shared:core:model")
+include(":shared:core:domain")
+include(":shared:core:data")
+include(":shared:core:jobs")
+include(":shared:core:security")
