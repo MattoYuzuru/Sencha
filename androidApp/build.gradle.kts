@@ -35,6 +35,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -75,6 +76,7 @@ dependencies {
     implementation(projects.shared.core.domain)
     implementation(projects.shared.core.data)
     implementation(projects.shared.core.jobs)
+    implementation(projects.shared.core.security)
     testImplementation(libs.kotlin.testJunit)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.uiTooling)

@@ -7,10 +7,7 @@ plugins {
 }
 
 kotlin {
-    android {
-        compilerOptions {
-            jvmTarget.set(JvmTarget.JVM_11)
-        }
+    androidLibrary {
         namespace = "com.sencha.sencha.core.model"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()

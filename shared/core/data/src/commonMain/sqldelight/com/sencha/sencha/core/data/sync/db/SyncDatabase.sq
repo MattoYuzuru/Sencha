@@ -1,0 +1,75 @@
+CREATE TABLE events (
+  event_id TEXT NOT NULL PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  upload_state INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX events_upload_state ON events(upload_state, created_at);
+
+CREATE TABLE sync_state (
+  key TEXT NOT NULL PRIMARY KEY,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE blobs (
+  blob_id TEXT NOT NULL PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  mime TEXT NOT NULL,
+  local_path TEXT,
+  remote_key TEXT,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX blobs_status ON blobs(status, created_at);
+
+selectAllEvents:
+SELECT * FROM events ORDER BY created_at ASC, event_id ASC;
+
+selectEventById:
+SELECT * FROM events WHERE event_id = ?;
+
+insertLocalEvent:
+INSERT OR IGNORE INTO events(event_id, device_id, chat_id, type, payload_json, created_at, upload_state)
+VALUES (?, ?, ?, ?, ?, ?, 1);
+
+insertRemoteEvent:
+INSERT OR IGNORE INTO events(event_id, device_id, chat_id, type, payload_json, created_at, upload_state)
+VALUES (?, ?, ?, ?, ?, ?, 0);
+
+selectPendingEvents:
+SELECT * FROM events WHERE upload_state = 1 ORDER BY created_at ASC LIMIT ?;
+
+markUploaded:
+UPDATE events SET upload_state = 0 WHERE event_id IN ?;
+
+pendingEventCount:
+SELECT COUNT(*) FROM events WHERE upload_state = 1;
+
+selectSyncState:
+SELECT value FROM sync_state WHERE key = ?;
+
+upsertSyncState:
+INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, ?);
+
+insertBlob:
+INSERT OR REPLACE INTO blobs(blob_id, chat_id, sha256, size, mime, local_path, remote_key, status, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectBlobById:
+SELECT * FROM blobs WHERE blob_id = ?;
+
+selectPendingBlobs:
+SELECT * FROM blobs WHERE status IN ('PENDING', 'FAILED') ORDER BY created_at ASC LIMIT ?;
+
+updateBlobStatus:
+UPDATE blobs SET status = ?, remote_key = ?, local_path = ? WHERE blob_id = ?;
+
+pendingBlobCount:
+SELECT COUNT(*) FROM blobs WHERE status IN ('PENDING', 'FAILED');

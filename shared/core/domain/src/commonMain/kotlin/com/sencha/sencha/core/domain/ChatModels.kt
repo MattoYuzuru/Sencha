@@ -1,6 +1,7 @@
 package com.sencha.sencha.core.domain
 
 import com.sencha.sencha.core.model.ModelId
+import kotlinx.serialization.Serializable
 import kotlin.time.Instant
 
 @JvmInline
@@ -9,6 +10,7 @@ value class ChatId(val value: String)
 @JvmInline
 value class ChatMessageId(val value: String)
 
+@Serializable
 enum class ChatRole {
     SYSTEM,
     USER,

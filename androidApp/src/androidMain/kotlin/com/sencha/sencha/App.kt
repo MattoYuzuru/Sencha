@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -25,15 +26,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.sencha.sencha.core.data.*
+import com.sencha.sencha.core.data.sync.*
 import com.sencha.sencha.core.domain.*
+import com.sencha.sencha.core.domain.sync.NodeInfo
+import com.sencha.sencha.core.domain.sync.SyncStatus
 import com.sencha.sencha.core.jobs.*
 import com.sencha.sencha.core.model.*
+import com.sencha.sencha.core.security.AndroidDeviceIdentityProvider
+import com.sencha.sencha.core.security.AndroidKeyStore
+import com.sencha.sencha.core.security.toHexString
 import com.sencha.sencha.local.AndroidDeviceProfileProvider
 import com.sencha.sencha.local.AndroidLlamaInferenceEngine
 import com.sencha.sencha.local.AndroidLocalModelStore
 import com.sencha.sencha.local.AndroidModelInstaller
 import com.sencha.sencha.local.toDisplayMessage
+import io.ktor.client.request.get
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -57,10 +67,17 @@ fun App() {
         val modelState by state.modelCatalogState.collectAsState()
         val chats by state.chatRepository.chats().collectAsState()
         val activeGeneration by state.activeGenerationState.collectAsState()
+        val sessionInfo by state.sessionInfo.collectAsState()
         var currentScreen by remember { mutableStateOf<Screen>(Screen.ChatList) }
 
         LaunchedEffect(Unit) {
             state.refreshModels()
+        }
+
+        LaunchedEffect(sessionInfo) {
+            if (sessionInfo != null) {
+                state.syncNow()
+            }
         }
 
         Box(
@@ -110,6 +127,31 @@ fun App() {
                                 onRefresh = { state.refreshModels() },
                             )
                         }
+                        Screen.Connections -> {
+                            val syncStatus by state.syncStatus.collectAsState()
+                            val nodes by state.nodes.collectAsState()
+                            val nodesLoading by state.nodesLoading.collectAsState()
+                            val nodesError by state.nodesError.collectAsState()
+                            val nodeTests by state.nodeTests.collectAsState()
+                            val sessionInfo by state.sessionInfo.collectAsState()
+                            val syncError by state.syncError.collectAsState()
+                            ConnectionsScreen(
+                                baseUrl = state.baseUrl.value,
+                                onBaseUrlChange = { state.baseUrl.value = it },
+                                isConnected = sessionInfo != null,
+                                syncStatus = syncStatus,
+                                syncError = syncError,
+                                onRegister = { code, deviceName -> state.registerDevice(code, deviceName) },
+                                onSyncNow = { state.syncNow() },
+                                nodes = nodes,
+                                nodesLoading = nodesLoading,
+                                nodesError = nodesError,
+                                nodeTests = nodeTests,
+                                onRefreshNodes = { state.refreshNodes() },
+                                onAddNode = { name, address -> state.addNode(name, address) },
+                                onTestNode = { address -> state.testNode(address) },
+                            )
+                        }
                     }
                 }
 
@@ -125,6 +167,7 @@ fun App() {
 private sealed class Screen(val title: String) {
     data object ChatList : Screen("Чаты")
     data object Models : Screen("Модели")
+    data object Connections : Screen("Связи")
     data class ChatDetail(val chatId: ChatId) : Screen("Чат")
 }
 
@@ -135,6 +178,32 @@ private data class ActiveGeneration(
 
 private class AppState(private val scope: CoroutineScope, context: android.content.Context) {
     private val jobEngine = InMemoryJobEngine(scope = scope)
+    private val httpClient = HttpClientFactory.create()
+    private val syncStore = SqlSyncStore(
+        SyncDatabaseFactory(AndroidSyncDatabaseDriverFactory(context)).create()
+    )
+    private val keyStore = AndroidKeyStore(context)
+    private val sessionStore = KeyStoreSessionStore(keyStore)
+    val sessionInfo = MutableStateFlow(sessionStore.load())
+    val baseUrl = MutableStateFlow("")
+    val syncStatus = MutableStateFlow(syncStore.current())
+    val syncError = MutableStateFlow<String?>(null)
+    val nodes = MutableStateFlow<List<NodeInfo>>(emptyList())
+    val nodesLoading = MutableStateFlow(false)
+    val nodesError = MutableStateFlow<String?>(null)
+    val nodeTests = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val deviceIdentity = AndroidDeviceIdentityProvider().loadOrCreate()
+    private val syncApi = DynamicSyncApi({ baseUrl.value }, httpClient, sessionStore)
+    private val blobTransfer = KtorBlobTransfer(httpClient, AndroidBlobDataSource())
+    private val syncEngine = SyncEngine(
+        eventStore = syncStore,
+        blobStore = syncStore,
+        api = syncApi,
+        blobTransfer = blobTransfer,
+        jobEngine = jobEngine,
+    )
+    private val flushPolicy = SyncFlushPolicy()
+    private val syncScheduler = SyncScheduler(syncEngine, syncStore, policy = flushPolicy)
     private val localStore = AndroidLocalModelStore(context)
     val modelInstaller = AndroidModelInstaller(context, localStore)
     private val localProvider = LocalTextLLMProvider(
@@ -147,7 +216,11 @@ private class AppState(private val scope: CoroutineScope, context: android.conte
 
     val modelCatalog = ModelCatalogService(registry)
     val modelCatalogState = modelCatalog.state()
-    val chatRepository = InMemoryChatRepository()
+    val chatRepository = EventBackedChatRepository(
+        eventStore = syncStore,
+        deviceId = deviceIdentity.deviceId.value,
+        onLocalEventAppended = { syncScheduler.onLocalEventAppended() },
+    )
     val selectedModel: MutableState<ModelEntry?> = mutableStateOf(null)
     private val activeGeneration = MutableStateFlow<ActiveGeneration?>(null)
     val activeGenerationState: StateFlow<ActiveGeneration?> = activeGeneration.asStateFlow()
@@ -157,6 +230,16 @@ private class AppState(private val scope: CoroutineScope, context: android.conte
         jobEngine = jobEngine,
         scope = scope,
     )
+
+    init {
+        scope.launch {
+            while (true) {
+                delay(flushPolicy.flushIntervalMillis)
+                syncScheduler.maybeFlush()
+                syncStatus.value = syncStore.current()
+            }
+        }
+    }
 
     fun createChat(title: String): ChatThread {
         val selected = selectedModel.value ?: modelCatalogState.value.entries.firstOrNull()
@@ -187,6 +270,128 @@ private class AppState(private val scope: CoroutineScope, context: android.conte
 
     fun stopGeneration() {
         activeGeneration.value?.handle?.cancel()
+    }
+
+    fun registerDevice(code: String, deviceName: String?) {
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) {
+            syncError.value = "Введите одноразовый код"
+            return
+        }
+        val validation = SyncEndpointPolicy.validate(
+            baseUrl = baseUrl.value,
+            isDebug = BuildConfig.DEBUG,
+            allowlistedHosts = setOf("10.0.2.2", "localhost"),
+        )
+        val normalized = validation.getOrElse { error ->
+            syncError.value = error.message ?: "Неверный адрес сервера"
+            return
+        }
+        baseUrl.value = normalized
+        scope.launch {
+            try {
+                syncError.value = null
+                val response = syncApi.registerDevice(
+                    RegisterDeviceRequest(
+                        code = trimmed,
+                        deviceId = deviceIdentity.deviceId.value,
+                        devicePublicKeyHex = deviceIdentity.publicKey.toHexString(),
+                        deviceName = deviceName?.ifBlank { null },
+                    )
+                )
+                val session = SessionInfo(
+                    userId = response.userId,
+                    deviceId = response.deviceId,
+                    sessionToken = response.sessionToken,
+                )
+                sessionStore.save(session)
+                sessionInfo.value = session
+                syncStatus.value = syncStore.current()
+                syncNow()
+            } catch (throwable: Throwable) {
+                syncError.value = throwable.message ?: "Не удалось подключиться"
+            }
+        }
+    }
+
+    fun syncNow() {
+        val uploadHandle = syncEngine.enqueueUploadEvents()
+        val downloadHandle = syncEngine.enqueueDownloadEvents()
+        val blobHandle = syncEngine.enqueueBlobUploads()
+        listOf(uploadHandle, downloadHandle, blobHandle).forEach { handle ->
+            scope.launch {
+                handle.snapshot.first { it.state in setOf(JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELED) }
+                if (handle == downloadHandle) {
+                    chatRepository.refreshFromStore()
+                }
+                syncStatus.value = syncStore.current()
+            }
+        }
+    }
+
+    fun refreshNodes() {
+        if (baseUrl.value.isBlank()) {
+            nodesError.value = "Укажите адрес сервера"
+            return
+        }
+        scope.launch {
+            nodesLoading.value = true
+            nodesError.value = null
+            try {
+                nodes.value = syncApi.fetchNodes()
+            } catch (throwable: Throwable) {
+                nodesError.value = throwable.message ?: "Не удалось загрузить узлы"
+            } finally {
+                nodesLoading.value = false
+            }
+        }
+    }
+
+    fun addNode(name: String, address: String) {
+        if (name.isBlank() || address.isBlank()) {
+            nodesError.value = "Заполните имя и адрес узла"
+            return
+        }
+        scope.launch {
+            nodesLoading.value = true
+            nodesError.value = null
+            try {
+                syncApi.upsertNode(
+                    NodeUpsertRequest(
+                        nodeId = null,
+                        name = name.trim(),
+                        address = address.trim(),
+                        lastSeenEpochMillis = Clock.System.now().toEpochMilliseconds(),
+                    )
+                )
+                nodes.value = syncApi.fetchNodes()
+            } catch (throwable: Throwable) {
+                nodesError.value = throwable.message ?: "Не удалось сохранить узел"
+            } finally {
+                nodesLoading.value = false
+            }
+        }
+    }
+
+    fun testNode(address: String) {
+        val validation = SyncEndpointPolicy.validate(
+            baseUrl = address.trim(),
+            isDebug = BuildConfig.DEBUG,
+            allowlistedHosts = setOf("10.0.2.2", "localhost"),
+        )
+        val normalized = validation.getOrElse { error ->
+            nodeTests.value = nodeTests.value + (address to (error.message ?: "Неверный адрес"))
+            return
+        }
+        scope.launch {
+            try {
+                val response = httpClient.get("$normalized/v1/health")
+                val status = if (response.status.isSuccess()) "OK" else "HTTP ${response.status.value}"
+                nodeTests.value = nodeTests.value + (address to status)
+            } catch (throwable: Throwable) {
+                nodeTests.value = nodeTests.value + (address to (throwable.message ?: "Ошибка"))
+            }
+        }
     }
 
     fun startImportJob(uri: String): JobHandle<LocalModelRecord> {
@@ -694,6 +899,198 @@ private fun ModelCategory.displayName(): String = when (this) {
 }
 
 @Composable
+private fun ConnectionsScreen(
+    baseUrl: String,
+    onBaseUrlChange: (String) -> Unit,
+    isConnected: Boolean,
+    syncStatus: SyncStatus,
+    syncError: String?,
+    onRegister: (String, String?) -> Unit,
+    onSyncNow: () -> Unit,
+    nodes: List<NodeInfo>,
+    nodesLoading: Boolean,
+    nodesError: String?,
+    nodeTests: Map<String, String>,
+    onRefreshNodes: () -> Unit,
+    onAddNode: (String, String) -> Unit,
+    onTestNode: (String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    var deviceName by remember { mutableStateOf("") }
+    var nodeName by remember { mutableStateOf("") }
+    var nodeAddress by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val online = remember { isOnline(context) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Sync storage", style = MaterialTheme.typography.titleMedium)
+                TextField(
+                    value = baseUrl,
+                    onValueChange = onBaseUrlChange,
+                    placeholder = { Text("https://sync.example.com") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                    ),
+                )
+                TextField(
+                    value = code,
+                    onValueChange = { code = it },
+                    placeholder = { Text("Одноразовый код") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                    ),
+                )
+                TextField(
+                    value = deviceName,
+                    onValueChange = { deviceName = it },
+                    placeholder = { Text("Имя устройства (опционально)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                    ),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(onClick = { onRegister(code, deviceName) }) {
+                        Text("Подключить")
+                    }
+                    OutlinedButton(onClick = onSyncNow, enabled = isConnected) {
+                        Text("Синхронизировать")
+                    }
+                }
+                Text(
+                    text = if (isConnected) "Статус: подключено" else "Статус: не подключено",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = "Последняя синхронизация: ${formatEpochMillis(syncStatus.lastSyncAtEpochMillis)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = "В очереди: события ${syncStatus.pendingEvents}, медиа ${syncStatus.pendingBlobs}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (!syncError.isNullOrBlank()) {
+                    Text(
+                        text = syncError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (!syncStatus.lastErrorMessage.isNullOrBlank()) {
+                    Text(
+                        text = "Ошибка: ${syncStatus.lastErrorMessage}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (!online) {
+                    Text(
+                        text = "Оффлайн: синхронизация приостановлена",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        GlassCard {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Compute nodes", style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = onRefreshNodes) { Text("Обновить") }
+                }
+                Text(
+                    text = "Рекомендуем: используйте Tailscale/ZeroTier для подключения домашнего сервера без проброса портов.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (nodesLoading) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else if (nodesError != null) {
+                    Text(
+                        text = nodesError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else if (nodes.isEmpty()) {
+                    Text(
+                        text = "Узлы не добавлены.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        nodes.forEach { node ->
+                            val testResult = nodeTests[node.address]
+                            GlassCard(borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)) {
+                                Column {
+                                    Text(node.name, style = MaterialTheme.typography.titleSmall)
+                                    Text(node.address, style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        text = "Последний пинг: ${formatEpochMillis(node.lastSeenEpochMillis)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (!testResult.isNullOrBlank()) {
+                                        Text(
+                                            text = "Test connection: $testResult",
+                                            style = MaterialTheme.typography.bodySmall,
+                                        )
+                                    }
+                                    TextButton(onClick = { onTestNode(node.address) }) {
+                                        Text("Test connection")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text("Добавить узел", style = MaterialTheme.typography.labelMedium)
+                TextField(
+                    value = nodeName,
+                    onValueChange = { nodeName = it },
+                    placeholder = { Text("Имя узла") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                    ),
+                )
+                TextField(
+                    value = nodeAddress,
+                    onValueChange = { nodeAddress = it },
+                    placeholder = { Text("Адрес (например, https://node.local)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
+                    ),
+                )
+                FilledTonalButton(onClick = { onAddNode(nodeName, nodeAddress) }) {
+                    Text("Сохранить узел")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun GlassTopBar(title: String) {
     Surface(
         modifier = Modifier
@@ -737,6 +1134,12 @@ private fun GlassBottomBar(
             icon = { Icon(Icons.Default.Tune, null) },
             label = { Text("Модели") },
         )
+        NavigationBarItem(
+            selected = current is Screen.Connections,
+            onClick = { onNavigate(Screen.Connections) },
+            icon = { Icon(Icons.Default.Cloud, null) },
+            label = { Text("Связи") },
+        )
     }
 }
 
@@ -761,6 +1164,21 @@ private fun GlassCard(
 private val SenchaBackground = Brush.verticalGradient(
     listOf(SenchaClay, SenchaMist),
 )
+
+private fun formatEpochMillis(epochMillis: Long?): String {
+    if (epochMillis == null) return "—"
+    val formatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm")
+        .withZone(java.time.ZoneId.systemDefault())
+    return formatter.format(java.time.Instant.ofEpochMilli(epochMillis))
+}
+
+private fun isOnline(context: android.content.Context): Boolean {
+    val connectivityManager = context.getSystemService(android.net.ConnectivityManager::class.java)
+        ?: return false
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
 
 @Composable
 private fun SenchaTheme(content: @Composable () -> Unit) {

@@ -32,6 +32,51 @@ APK появится здесь: `androidApp/build/outputs/apk/debug/androidApp-
 ./gradlew test
 ```
 
+## Sync server (Ktor)
+
+### Локальный запуск
+
+Требуются S3‑совместимое хранилище (например, MinIO) и переменные окружения:
+
+```shell
+export SENCHA_S3_ENDPOINT="http://localhost:9000"
+export SENCHA_S3_REGION="us-east-1"
+export SENCHA_S3_BUCKET="sencha"
+export SENCHA_S3_ACCESS_KEY="minioadmin"
+export SENCHA_S3_SECRET_KEY="minioadmin"
+export SENCHA_S3_FORCE_PATH_STYLE="true"
+export SENCHA_REGISTRATION_CODE="SENCHA-DEV-0001"
+./gradlew :server:run
+```
+
+Сервер слушает `http://localhost:8080` по умолчанию. Для production требуется HTTPS.
+
+### MinIO (пример)
+
+```shell
+docker run --name sencha-minio -p 9000:9000 -p 9001:9001 \\
+  -e MINIO_ROOT_USER=minioadmin \\
+  -e MINIO_ROOT_PASSWORD=minioadmin \\
+  quay.io/minio/minio server /data --console-address :9001
+```
+
+Создайте bucket `sencha` в консоли MinIO (`http://localhost:9001`).
+
+### Подключение приложения
+
+В разделе **Связи**:
+- укажите URL сервера (HTTPS в release),
+- введите одноразовый код,
+- нажмите **Подключить**.
+
+После регистрации можно нажать **Синхронизировать** для ручного обновления.
+
+### Tailnet onboarding (MVP)
+
+Рекомендуем Tailscale или ZeroTier для подключения домашнего сервера без проброса портов:
+- https://tailscale.com/kb/
+- https://docs.zerotier.com/
+
 ### Линт
 
 ```shell
@@ -90,3 +135,15 @@ APK появится здесь: `androidApp/build/outputs/apk/debug/androidApp-
   https://raw.githubusercontent.com/ollama/ollama/main/docs/api.md
 - AndroidX Compose BOM: фиксируем версии Compose через BOM и используем AndroidX‑артефакты.
   https://developer.android.com/jetpack/compose/bom
+- Ktor Server Auth (Bearer) + Content Negotiation + CallId: используем bearer‑аутентификацию, JSON сериализацию и request id.
+  https://ktor.io/docs/server-auth.html
+  https://ktor.io/docs/server-content-negotiation.html
+  https://ktor.io/docs/server-call-id.html
+- AWS SDK v2 S3 Presign: выдаем presigned URL, не раскрывая постоянные креды.
+  https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/examples-s3-presign.html
+- SQLDelight (KMP SQLite): локальные таблицы событий/медиа через SQLDelight runtime и платформенные драйверы.
+  https://cashapp.github.io/sqldelight/
+- Android Keystore: хранение секретов в Keystore‑обертке с AES/GCM.
+  https://developer.android.com/privacy-and-security/keystore
+- Apple Keychain Services: хранение токенов в Keychain.
+  https://developer.apple.com/documentation/security/keychain_services
