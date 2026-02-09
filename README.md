@@ -76,6 +76,16 @@ APK появится здесь: `androidApp/build/outputs/apk/debug/androidApp-
   https://ktor.io/docs/client-responses.html
 - Ktor ByteReadChannel line APIs: заменили deprecated `readUTF8Line` на `readLine` по исходникам Ktor.
   https://raw.githubusercontent.com/ktorio/ktor/main/ktor-io/common/src/io/ktor/utils/io/ByteReadChannelOperations.kt
+- llama.cpp (оф. README) и GGUF tooling: выбран runtime и формат для on-device MVP.
+  https://raw.githubusercontent.com/ggml-org/llama.cpp/master/README.md
+  https://raw.githubusercontent.com/ggml-org/llama.cpp/master/gguf-py/README.md
+- Android NDK + CMake: интеграция native runtime через отдельный Android library module.
+  https://developer.android.com/ndk/guides/cmake
+- Android Network Security Config: cleartext только в debug для localhost/10.0.2.2, release — HTTPS only.
+  https://developer.android.com/training/articles/security-config
+- Android NetworkCapabilities/ConnectivityManager: определение наличия проверенного интернета для offline-first UI.
+  https://developer.android.com/reference/android/net/NetworkCapabilities
+  https://developer.android.com/reference/android/net/ConnectivityManager
 - Ollama API: используем `/api/tags` и `/api/chat` со стримингом.
   https://raw.githubusercontent.com/ollama/ollama/main/docs/api.md
 - AndroidX Compose BOM: фиксируем версии Compose через BOM и используем AndroidX‑артефакты.
