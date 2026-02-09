@@ -26,7 +26,21 @@ class ModelDescriptorTest {
             displayName = "Local LLM",
             capabilities = setOf(ModelCapability.LLM),
             parameters = ModelParameters(temperature = 0.6, maxTokens = 512),
-            resources = ModelResourceProfile(minRamMb = 4096, minDiskMb = 2048, requiresNetwork = false),
+            resources = ModelResourceProfile(
+                minRamMb = 4096,
+                minDiskMb = 2048,
+                maxContextTokens = 4096,
+                requiresNetwork = false,
+            ),
+            runtime = ModelRuntime.LLAMA_CPP,
+            source = ModelSource.local(),
+            artifact = ModelArtifact(
+                format = ModelFormat.GGUF,
+                sizeBytes = 1024,
+                sha256 = "deadbeef",
+                license = "Apache-2.0",
+                quantization = "Q4_K_M",
+            ),
         )
 
         val json = Json.encodeToString(ModelDescriptor.serializer(), descriptor)

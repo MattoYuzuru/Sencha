@@ -18,6 +18,8 @@ import com.sencha.sencha.core.model.ModelCapability
 import com.sencha.sencha.core.model.ModelDescriptor
 import com.sencha.sencha.core.model.ModelId
 import com.sencha.sencha.core.model.ModelResourceProfile
+import com.sencha.sencha.core.model.ModelRuntime
+import com.sencha.sencha.core.model.ModelSource
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.accept
@@ -77,6 +79,8 @@ class RemoteOllamaProvider(
                         minDiskMb = diskMb,
                         requiresNetwork = true,
                     ),
+                    runtime = ModelRuntime.REMOTE,
+                    source = ModelSource.remote(),
                 )
             }
         }

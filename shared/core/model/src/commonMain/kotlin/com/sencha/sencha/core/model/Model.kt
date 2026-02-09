@@ -24,9 +24,50 @@ enum class ModelCategory {
 }
 
 @Serializable
+enum class ModelFormat {
+    GGUF,
+}
+
+@Serializable
+enum class ModelRuntime {
+    LLAMA_CPP,
+    REMOTE,
+    UNKNOWN,
+}
+
+@Serializable
+enum class ModelSourceType {
+    LOCAL,
+    REMOTE,
+    DOWNLOAD,
+}
+
+@Serializable
+data class ModelSource(
+    val type: ModelSourceType,
+    val downloadUrl: String? = null,
+) {
+    companion object {
+        fun local(): ModelSource = ModelSource(ModelSourceType.LOCAL)
+        fun remote(): ModelSource = ModelSource(ModelSourceType.REMOTE)
+        fun download(url: String): ModelSource = ModelSource(ModelSourceType.DOWNLOAD, downloadUrl = url)
+    }
+}
+
+@Serializable
+data class ModelArtifact(
+    val format: ModelFormat,
+    val sizeBytes: Long? = null,
+    val sha256: String? = null,
+    val license: String? = null,
+    val quantization: String? = null,
+)
+
+@Serializable
 data class ModelResourceProfile(
     val minRamMb: Int? = null,
     val minDiskMb: Int? = null,
+    val maxContextTokens: Int? = null,
     val requiresNetwork: Boolean = false,
 )
 
@@ -37,6 +78,9 @@ data class ModelDescriptor(
     val capabilities: Set<ModelCapability>,
     val parameters: ModelParameters = ModelParameters(),
     val resources: ModelResourceProfile = ModelResourceProfile(),
+    val runtime: ModelRuntime = ModelRuntime.UNKNOWN,
+    val source: ModelSource = ModelSource.local(),
+    val artifact: ModelArtifact? = null,
 )
 
 @Serializable
