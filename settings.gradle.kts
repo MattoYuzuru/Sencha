@@ -29,6 +29,7 @@ dependencyResolutionManagement {
 }
 
 include(":androidApp")
+include(":android-llama")
 include(":shared")
 include(":shared:core:model")
 include(":shared:core:domain")

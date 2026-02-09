@@ -2,6 +2,8 @@
 
 package com.sencha.sencha
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,16 +20,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.sencha.sencha.core.data.*
 import com.sencha.sencha.core.domain.*
-import com.sencha.sencha.core.jobs.InMemoryJobEngine
-import com.sencha.sencha.core.model.ModelCategory
-import com.sencha.sencha.core.model.categories
+import com.sencha.sencha.core.jobs.*
+import com.sencha.sencha.core.model.*
+import com.sencha.sencha.local.AndroidDeviceProfileProvider
+import com.sencha.sencha.local.AndroidLlamaInferenceEngine
+import com.sencha.sencha.local.AndroidLocalModelStore
+import com.sencha.sencha.local.AndroidModelInstaller
+import com.sencha.sencha.local.toDisplayMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.random.Random
+import kotlin.time.Clock
 
 private val SenchaGreen = Color(0xFF7DBE9F)
 private val SenchaLeaf = Color(0xFF5C8F79)
@@ -39,7 +48,8 @@ private val SenchaClay = Color(0xFFF6F3EE)
 fun App() {
     SenchaTheme {
         val scope = rememberCoroutineScope()
-        val state = remember { AppState(scope) }
+        val context = LocalContext.current
+        val state = remember { AppState(scope, context) }
         val modelState by state.modelCatalogState.collectAsState()
         val chats by state.chatRepository.chats().collectAsState()
         var currentScreen by remember { mutableStateOf<Screen>(Screen.ChatList) }
@@ -85,6 +95,8 @@ fun App() {
                             ModelsScreen(
                                 state = modelState,
                                 selectedModel = state.selectedModel.value,
+                                onImport = { uri -> state.startImportJob(uri) },
+                                onDownload = { spec -> state.startDownloadJob(spec) },
                                 onSelect = { entry -> state.selectedModel.value = entry },
                                 onRefresh = { state.refreshModels() },
                             )
@@ -107,12 +119,16 @@ private sealed class Screen(val title: String) {
     data class ChatDetail(val chatId: ChatId) : Screen("Чат")
 }
 
-private class AppState(private val scope: CoroutineScope) {
+private class AppState(private val scope: CoroutineScope, context: android.content.Context) {
     private val jobEngine = InMemoryJobEngine(scope = scope)
-    private val localProvider = LocalTextLLMProvider()
-    private val remoteProvider = RemoteOllamaProvider("http://localhost:11434")
+    private val localStore = AndroidLocalModelStore(context)
+    val modelInstaller = AndroidModelInstaller(context, localStore)
+    private val localProvider = LocalTextLLMProvider(
+        store = localStore,
+        engine = AndroidLlamaInferenceEngine(context),
+    )
     private val registry: ModelProviderRegistry = DefaultModelProviderRegistry(
-        listOf(localProvider, remoteProvider)
+        listOf(localProvider)
     )
 
     val modelCatalog = ModelCatalogService(registry)
@@ -141,6 +157,51 @@ private class AppState(private val scope: CoroutineScope) {
     fun refreshModels() {
         scope.launch { modelCatalog.refresh() }
     }
+
+    fun startImportJob(uri: String): JobHandle<LocalModelRecord> {
+        val job = object : JobDefinition<LocalModelRecord> {
+            override val id = JobId("install-import-${Clock.System.now().toEpochMilliseconds()}-${Random.nextInt()}")
+            override val description = "Import local model"
+
+            override suspend fun run(context: JobExecutionContext<LocalModelRecord>) {
+                val result = modelInstaller.importModel(ModelImportRequest(uri)) { current, total ->
+                    context.updateProgress(JobProgress(current = current, total = total, message = "Импорт"))
+                }
+                val record = result.getOrElse { throw JobFailureException(toInstallError(it)) }
+                context.emitOutput(record)
+            }
+        }
+        return jobEngine.submit(job)
+    }
+
+    fun startDownloadJob(spec: ModelDownloadSpec): JobHandle<LocalModelRecord> {
+        val job = object : JobDefinition<LocalModelRecord> {
+            override val id = JobId("install-download-${Clock.System.now().toEpochMilliseconds()}-${Random.nextInt()}")
+            override val description = "Download local model"
+
+            override suspend fun run(context: JobExecutionContext<LocalModelRecord>) {
+                val result = modelInstaller.downloadModel(ModelDownloadRequest(spec)) { current, total ->
+                    context.updateProgress(JobProgress(current = current, total = total, message = "Загрузка"))
+                }
+                val record = result.getOrElse { throw JobFailureException(toInstallError(it)) }
+                context.emitOutput(record)
+            }
+        }
+        return jobEngine.submit(job)
+    }
+
+    private fun toInstallError(throwable: Throwable): JobError {
+        val message = throwable.message ?: "Не удалось установить модель"
+        val code = when {
+            message.contains("sha", ignoreCase = true) -> JobErrorCode.VALIDATION
+            message.contains("network", ignoreCase = true) -> JobErrorCode.NETWORK
+            message.contains("tls", ignoreCase = true) -> JobErrorCode.NETWORK
+            message.contains("http", ignoreCase = true) -> JobErrorCode.NETWORK
+            throwable is java.io.IOException -> JobErrorCode.NETWORK
+            else -> JobErrorCode.UNKNOWN
+        }
+        return JobError(code = code, message = message, cause = throwable::class.simpleName)
+    }
 }
 
 @Composable
@@ -165,6 +226,13 @@ private fun ChatListScreen(
                     text = "Модель: ${selectedModel?.descriptor?.displayName ?: "Не выбрана"}",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                if (selectedModel == null) {
+                    Text(
+                        "Импортируйте модель, чтобы создать чат.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 TextField(
                     value = newTitle,
                     onValueChange = { newTitle = it },
@@ -180,6 +248,7 @@ private fun ChatListScreen(
                         onNewChat(newTitle)
                         newTitle = ""
                     },
+                    enabled = selectedModel != null,
                     modifier = Modifier.align(Alignment.End),
                 ) {
                     Text("Создать")
@@ -320,11 +389,49 @@ private fun ChatBubble(message: ChatMessage) {
 private fun ModelsScreen(
     state: ModelCatalogState,
     selectedModel: ModelEntry?,
+    onImport: (String) -> JobHandle<LocalModelRecord>,
+    onDownload: (ModelDownloadSpec) -> JobHandle<LocalModelRecord>,
     onSelect: (ModelEntry) -> Unit,
     onRefresh: () -> Unit,
 ) {
     val availabilityPolicy = remember { ModelAvailabilityPolicy() }
-    val deviceProfile = DeviceProfile(availableRamMb = 4096, availableDiskMb = 10_240, isNetworkAvailable = true)
+    val context = LocalContext.current
+    val deviceProfile = remember(context) { AndroidDeviceProfileProvider.current(context) }
+    var downloadUrl by remember { mutableStateOf("") }
+    var downloadSha by remember { mutableStateOf("") }
+    var installJob by remember { mutableStateOf<JobHandle<LocalModelRecord>?>(null) }
+    var installSnapshot by remember { mutableStateOf<JobSnapshot?>(null) }
+    var installMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(installJob) {
+        installSnapshot = null
+        installMessage = null
+        val job = installJob ?: return@LaunchedEffect
+        job.snapshot.collect { snapshot ->
+            installSnapshot = snapshot
+            if (snapshot.state == JobState.FAILED) {
+                installMessage = snapshot.error?.message
+            }
+        }
+    }
+
+    LaunchedEffect(installJob) {
+        val job = installJob ?: return@LaunchedEffect
+        job.output.collect {
+            installMessage = null
+            onRefresh()
+        }
+    }
+
+    val isInstalling = installSnapshot?.state == JobState.RUNNING || installSnapshot?.state == JobState.QUEUED
+    val progress = installSnapshot?.progress?.fraction?.toFloat()
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        installJob = onImport(uri.toString())
+    }
 
     Column(
         modifier = Modifier
@@ -333,13 +440,78 @@ private fun ModelsScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         GlassCard {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Каталог моделей", style = MaterialTheme.typography.titleMedium)
-                FilledTonalButton(onClick = onRefresh) { Text("Обновить") }
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Каталог моделей", style = MaterialTheme.typography.titleMedium)
+                    FilledTonalButton(onClick = onRefresh) { Text("Обновить") }
+                }
+
+                Text("Импорт и загрузка", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                        Text("Импортировать GGUF")
+                    }
+                }
+                TextField(
+                    value = downloadUrl,
+                    onValueChange = { downloadUrl = it },
+                    placeholder = { Text("URL на GGUF") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextField(
+                    value = downloadSha,
+                    onValueChange = { downloadSha = it },
+                    placeholder = { Text("SHA256") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    FilledTonalButton(
+                        onClick = {
+                            val descriptor = ModelDescriptor(
+                                id = ModelId(downloadUrl.substringAfterLast('/').substringBeforeLast('.')),
+                                displayName = "Downloaded model",
+                                capabilities = setOf(ModelCapability.LLM),
+                                runtime = ModelRuntime.LLAMA_CPP,
+                                source = ModelSource.download(downloadUrl),
+                                artifact = ModelArtifact(
+                                    format = ModelFormat.GGUF,
+                                    sizeBytes = null,
+                                    sha256 = downloadSha,
+                                    license = null,
+                                    quantization = null,
+                                ),
+                            )
+                            installJob = onDownload(
+                                ModelDownloadSpec(
+                                    descriptor = descriptor,
+                                    url = downloadUrl,
+                                    sha256 = downloadSha,
+                                    sizeBytes = 0,
+                                )
+                            )
+                        },
+                        enabled = downloadUrl.isNotBlank() && downloadSha.length >= 8 && !isInstalling,
+                    ) {
+                        Text("Скачать")
+                    }
+                }
+                if (isInstalling) {
+                    if (progress != null) {
+                        LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                }
+                installMessage?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
 
@@ -407,9 +579,32 @@ private fun ModelRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            val artifact = entry.descriptor.artifact
+            val sizeMb = artifact?.sizeBytes?.let { it / (1024 * 1024) }
+            val minRam = entry.descriptor.resources.minRamMb
+            val quant = artifact?.quantization
+            val license = artifact?.license
+            val sha = artifact?.sha256
+            if (sizeMb != null || minRam != null || quant != null) {
+                Text(
+                    listOfNotNull(
+                        sizeMb?.let { "Размер: ${it}MB" },
+                        minRam?.let { "RAM: ${it}MB+" },
+                        quant?.let { "Квант: $it" },
+                    ).joinToString(" • "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!license.isNullOrBlank()) {
+                Text("Лицензия: $license", style = MaterialTheme.typography.bodySmall)
+            }
+            if (!sha.isNullOrBlank()) {
+                Text("SHA256: ${sha.take(12)}…", style = MaterialTheme.typography.bodySmall)
+            }
             if (!support.isSupported) {
                 Text(
-                    "Недоступна: ${support.violations.joinToString()}",
+                    "Недоступна: ${support.toDisplayMessage()}",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                 )
