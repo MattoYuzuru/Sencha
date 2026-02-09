@@ -35,6 +35,10 @@ import com.sencha.sencha.local.AndroidModelInstaller
 import com.sencha.sencha.local.toDisplayMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlin.random.Random
 import kotlin.time.Clock
 
@@ -52,6 +56,7 @@ fun App() {
         val state = remember { AppState(scope, context) }
         val modelState by state.modelCatalogState.collectAsState()
         val chats by state.chatRepository.chats().collectAsState()
+        val activeGeneration by state.activeGenerationState.collectAsState()
         var currentScreen by remember { mutableStateOf<Screen>(Screen.ChatList) }
 
         LaunchedEffect(Unit) {
@@ -84,11 +89,15 @@ fun App() {
                         is Screen.ChatDetail -> {
                             val chatId = screen.chatId
                             val messages by state.chatRepository.messages(chatId).collectAsState()
+                            val isGeneratingHere = activeGeneration?.chatId == chatId
                             ChatScreen(
                                 chat = state.chatRepository.findChat(chatId),
                                 messages = messages,
+                                isBusy = activeGeneration != null,
+                                isGeneratingHere = isGeneratingHere,
                                 onBack = { currentScreen = Screen.ChatList },
                                 onSend = { text -> state.sendMessage(chatId, text) },
+                                onStop = { state.stopGeneration() },
                             )
                         }
                         Screen.Models -> {
@@ -119,6 +128,11 @@ private sealed class Screen(val title: String) {
     data class ChatDetail(val chatId: ChatId) : Screen("Чат")
 }
 
+private data class ActiveGeneration(
+    val chatId: ChatId,
+    val handle: JobHandle<ChatDelta>,
+)
+
 private class AppState(private val scope: CoroutineScope, context: android.content.Context) {
     private val jobEngine = InMemoryJobEngine(scope = scope)
     private val localStore = AndroidLocalModelStore(context)
@@ -135,6 +149,8 @@ private class AppState(private val scope: CoroutineScope, context: android.conte
     val modelCatalogState = modelCatalog.state()
     val chatRepository = InMemoryChatRepository()
     val selectedModel: MutableState<ModelEntry?> = mutableStateOf(null)
+    private val activeGeneration = MutableStateFlow<ActiveGeneration?>(null)
+    val activeGenerationState: StateFlow<ActiveGeneration?> = activeGeneration.asStateFlow()
     private val chatUseCase = ChatUseCase(
         repository = chatRepository,
         providers = registry,
@@ -151,11 +167,26 @@ private class AppState(private val scope: CoroutineScope, context: android.conte
 
     fun sendMessage(chatId: ChatId, text: String) {
         if (text.isBlank()) return
-        chatUseCase.sendUserMessage(chatId, text)
+        val current = activeGeneration.value
+        if (current?.handle?.snapshot?.value?.state in setOf(JobState.QUEUED, JobState.RUNNING)) {
+            return
+        }
+        val handle = chatUseCase.sendUserMessage(chatId, text)
+        activeGeneration.value = ActiveGeneration(chatId, handle)
+        scope.launch {
+            handle.snapshot.first { it.state in setOf(JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELED) }
+            if (activeGeneration.value?.handle == handle) {
+                activeGeneration.value = null
+            }
+        }
     }
 
     fun refreshModels() {
         scope.launch { modelCatalog.refresh() }
+    }
+
+    fun stopGeneration() {
+        activeGeneration.value?.handle?.cancel()
     }
 
     fun startImportJob(uri: String): JobHandle<LocalModelRecord> {
@@ -298,8 +329,11 @@ private fun ChatListScreen(
 private fun ChatScreen(
     chat: ChatThread?,
     messages: List<ChatMessage>,
+    isBusy: Boolean,
+    isGeneratingHere: Boolean,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onStop: () -> Unit,
 ) {
     var input by remember { mutableStateOf("") }
 
@@ -338,6 +372,13 @@ private fun ChatScreen(
 
         GlassCard {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (isBusy && !isGeneratingHere) {
+                    Text(
+                        "Идет генерация в другом чате. Дождитесь завершения или остановите её.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 TextField(
                     value = input,
                     onValueChange = { input = it },
@@ -348,14 +389,33 @@ private fun ChatScreen(
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f),
                     ),
                 )
-                Button(
-                    onClick = {
-                        onSend(input)
-                        input = ""
-                    },
-                    modifier = Modifier.align(Alignment.End),
+                if (isGeneratingHere) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Отправить")
+                    if (isBusy && !isGeneratingHere) {
+                        TextButton(onClick = onStop) {
+                            Text("Остановить")
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            if (isGeneratingHere) {
+                                onStop()
+                            } else {
+                                onSend(input)
+                                input = ""
+                            }
+                        },
+                        enabled = isGeneratingHere || !isBusy,
+                        modifier = Modifier.align(Alignment.CenterVertically),
+                    ) {
+                        Text(if (isGeneratingHere) "Стоп" else "Отправить")
+                    }
                 }
             }
         }
