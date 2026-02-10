@@ -71,6 +71,20 @@ docker run --name sencha-minio -p 9000:9000 -p 9001:9001 \\
 
 После регистрации можно нажать **Синхронизировать** для ручного обновления.
 
+## STT/TTS и артефакты
+
+В разделе **Медиа**:
+- **STT**: выберите аудио файл, укажите (опционально) язык и запустите расшифровку. Текст сохраняется как артефакт и доступен в списке артефактов.
+- **TTS**: введите текст, выберите голос и формат, запустите синтез. Аудио сохраняется как артефакт и воспроизводится в приложении.
+- **Артефакты**: фильтр по тексту/аудио, копирование текста, загрузка/прослушивание аудио.
+
+Remote-node адрес задается в поле **Compute node**. Для релизных сборок требуется HTTPS.
+
+## Online каталог (опционально)
+
+В разделе **Модели** отображается блок **Online catalog** только при наличии интернета. Источник — HTTPS JSON-манифест.
+Для on-device моделей доступна установка через job с проверкой SHA256. Remote-only модели показываются без кнопки установки.
+
 ### Tailnet onboarding (MVP)
 
 Рекомендуем Tailscale или ZeroTier для подключения домашнего сервера без проброса портов:
@@ -147,3 +161,15 @@ docker run --name sencha-minio -p 9000:9000 -p 9001:9001 \\
   https://developer.android.com/privacy-and-security/keystore
 - Apple Keychain Services: хранение токенов в Keychain.
   https://developer.apple.com/documentation/security/keychain_services
+- Android ActivityResultContracts.OpenDocument + OpenableColumns: выбор аудио и чтение метаданных файлов.
+  https://developer.android.com/reference/androidx/activity/result/contract/ActivityResultContracts.OpenDocument
+  https://developer.android.com/reference/android/provider/OpenableColumns
+- Android MediaPlayer: воспроизведение локальных аудио артефактов.
+  https://developer.android.com/reference/android/media/MediaPlayer
+- Apple UIDocumentPickerViewController: выбор аудио файлов на iOS.
+  https://developer.apple.com/documentation/uikit/uidocumentpickerviewcontroller
+- Apple AVAudioPlayer + AVAudioSession: воспроизведение аудио на iOS.
+  https://developer.apple.com/documentation/avfaudio/avaudioplayer
+  https://developer.apple.com/documentation/avfaudio/avaudiosession
+- Ktor client multipart: загрузка аудио в remote-node STT pipeline.
+  https://ktor.io/docs/client-multipart.html
