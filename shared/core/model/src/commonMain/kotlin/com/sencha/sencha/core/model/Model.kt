@@ -15,6 +15,15 @@ enum class ModelCapability {
 }
 
 @Serializable
+enum class ModelType {
+    CHAT,
+    STT,
+    TTS,
+    VISION,
+    IMAGE_GEN,
+}
+
+@Serializable
 enum class ModelCategory {
     CHAT,
     SPEECH_TO_TEXT,
@@ -26,12 +35,15 @@ enum class ModelCategory {
 @Serializable
 enum class ModelFormat {
     GGUF,
+    REMOTE_SERVICE,
+    ON_DEVICE,
 }
 
 @Serializable
 enum class ModelRuntime {
     LLAMA_CPP,
     REMOTE,
+    REMOTE_NODE,
     UNKNOWN,
 }
 
@@ -76,11 +88,14 @@ data class ModelDescriptor(
     val id: ModelId,
     val displayName: String,
     val capabilities: Set<ModelCapability>,
+    val types: Set<ModelType> = emptySet(),
     val parameters: ModelParameters = ModelParameters(),
     val resources: ModelResourceProfile = ModelResourceProfile(),
     val runtime: ModelRuntime = ModelRuntime.UNKNOWN,
     val source: ModelSource = ModelSource.local(),
     val artifact: ModelArtifact? = null,
+    val sttCapabilities: SttCapabilities? = null,
+    val ttsCapabilities: TtsCapabilities? = null,
 )
 
 @Serializable
@@ -95,4 +110,14 @@ fun ModelDescriptor.categories(): Set<ModelCategory> = buildSet {
     if (ModelCapability.TTS in capabilities) add(ModelCategory.TEXT_TO_SPEECH)
     if (ModelCapability.VISION in capabilities) add(ModelCategory.VISION)
     if (ModelCapability.VIDEO in capabilities) add(ModelCategory.VIDEO)
+}
+
+fun ModelDescriptor.types(): Set<ModelType> {
+    if (types.isNotEmpty()) return types
+    return buildSet {
+        if (ModelCapability.LLM in capabilities) add(ModelType.CHAT)
+        if (ModelCapability.STT in capabilities) add(ModelType.STT)
+        if (ModelCapability.TTS in capabilities) add(ModelType.TTS)
+        if (ModelCapability.VISION in capabilities) add(ModelType.VISION)
+    }
 }
