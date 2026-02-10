@@ -29,6 +29,32 @@ CREATE TABLE blobs (
 
 CREATE INDEX blobs_status ON blobs(status, created_at);
 
+CREATE TABLE artifacts (
+  artifact_id TEXT NOT NULL PRIMARY KEY,
+  type TEXT NOT NULL,
+  origin_json TEXT NOT NULL,
+  meta_json TEXT NOT NULL,
+  text_content TEXT,
+  blob_id TEXT,
+  source_blob_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX artifacts_type ON artifacts(type, created_at);
+
+CREATE TABLE jobs (
+  job_id TEXT NOT NULL PRIMARY KEY,
+  type TEXT NOT NULL,
+  state TEXT NOT NULL,
+  model_provider_id TEXT NOT NULL,
+  model_id TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  error_code TEXT,
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 selectAllEvents:
 SELECT * FROM events ORDER BY created_at ASC, event_id ASC;
 
@@ -66,10 +92,33 @@ selectBlobById:
 SELECT * FROM blobs WHERE blob_id = ?;
 
 selectPendingBlobs:
-SELECT * FROM blobs WHERE status IN ('PENDING', 'FAILED') ORDER BY created_at ASC LIMIT ?;
+SELECT * FROM blobs WHERE status IN ('PENDING', 'FAILED') AND local_path IS NOT NULL ORDER BY created_at ASC LIMIT ?;
 
 updateBlobStatus:
 UPDATE blobs SET status = ?, remote_key = ?, local_path = ? WHERE blob_id = ?;
 
 pendingBlobCount:
-SELECT COUNT(*) FROM blobs WHERE status IN ('PENDING', 'FAILED');
+SELECT COUNT(*) FROM blobs WHERE status IN ('PENDING', 'FAILED') AND local_path IS NOT NULL;
+
+selectAllArtifacts:
+SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC;
+
+selectArtifactsByType:
+SELECT * FROM artifacts WHERE type = ? ORDER BY created_at DESC, artifact_id DESC;
+
+selectArtifactById:
+SELECT * FROM artifacts WHERE artifact_id = ?;
+
+insertArtifact:
+INSERT OR IGNORE INTO artifacts(artifact_id, type, origin_json, meta_json, text_content, blob_id, source_blob_id, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+upsertJob:
+INSERT OR REPLACE INTO jobs(job_id, type, state, model_provider_id, model_id, payload_json, error_code, error_message, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectJobById:
+SELECT * FROM jobs WHERE job_id = ?;
+
+selectAllJobs:
+SELECT * FROM jobs ORDER BY updated_at DESC, job_id DESC;

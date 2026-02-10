@@ -9,4 +9,6 @@ interface BlobDataSource {
 
 interface BlobTransfer {
     suspend fun upload(presign: PresignResponse, blob: BlobRecord)
+
+    suspend fun download(presign: PresignResponse): ByteArray
 }

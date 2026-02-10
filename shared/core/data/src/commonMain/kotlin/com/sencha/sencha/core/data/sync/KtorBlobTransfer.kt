@@ -2,6 +2,7 @@ package com.sencha.sencha.core.data.sync
 
 import com.sencha.sencha.core.domain.sync.BlobRecord
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.request.headers
 import io.ktor.client.request.request
 import io.ktor.client.request.setBody
@@ -26,5 +27,14 @@ class KtorBlobTransfer(
             contentType(ContentType.parse(blob.mime))
             setBody(bytes)
         }
+    }
+
+    override suspend fun download(presign: PresignResponse): ByteArray {
+        return client.request(presign.url) {
+            method = HttpMethod.parse(presign.method)
+            headers {
+                presign.headers.forEach { (key, value) -> append(key, value) }
+            }
+        }.body()
     }
 }

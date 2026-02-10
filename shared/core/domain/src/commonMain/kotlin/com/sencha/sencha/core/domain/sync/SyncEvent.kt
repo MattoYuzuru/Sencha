@@ -22,4 +22,7 @@ data class SyncEvent(
 object SyncEventTypes {
     const val CHAT_CREATED = "chat.created"
     const val MESSAGE_CREATED = "message.created"
+    const val ARTIFACT_CREATED = "artifact.created"
+    const val ARTIFACT_UPDATED = "artifact.updated"
+    const val BLOB_UPLOADED = "blob.uploaded"
 }

@@ -1,7 +1,10 @@
 package com.sencha.sencha.core.data.sync
 
 import com.sencha.sencha.core.domain.sync.BlobStatus
+import com.sencha.sencha.core.domain.sync.BlobUploadedPayload
+import com.sencha.sencha.core.domain.sync.EventPayloadEnvelope
 import com.sencha.sencha.core.domain.sync.SyncEvent
+import com.sencha.sencha.core.domain.sync.SyncEventTypes
 import com.sencha.sencha.core.domain.sync.UlidGenerator
 import com.sencha.sencha.core.jobs.JobDefinition
 import com.sencha.sencha.core.jobs.JobError
@@ -13,6 +16,7 @@ import com.sencha.sencha.core.jobs.JobProgress
 import com.sencha.sencha.core.jobs.JobEngine
 import com.sencha.sencha.core.jobs.JobExecutionContext
 import kotlin.time.Clock
+import kotlinx.serialization.json.encodeToJsonElement
 
 
 data class SyncConfig(
@@ -31,6 +35,7 @@ class SyncEngine(
     private val api: SyncApi,
     private val blobTransfer: BlobTransfer,
     private val jobEngine: JobEngine,
+    private val deviceId: String,
     private val clock: Clock = Clock.System,
     private val config: SyncConfig = SyncConfig(),
 ) {
@@ -141,6 +146,25 @@ class SyncEngine(
                         try {
                             blobTransfer.upload(presign, blob)
                             blobStore.updateStatus(blob.blobId, BlobStatus.UPLOADED, presign.key, blob.localPath)
+                            eventStore.appendLocal(
+                                SyncEvent(
+                                    eventId = UlidGenerator.newUlid(),
+                                    deviceId = deviceId,
+                                    chatId = blob.chatId,
+                                    type = SyncEventTypes.BLOB_UPLOADED,
+                                    payload = EventPayloadEnvelope(
+                                        schemaVersion = 1,
+                                        data = SyncJson.instance.encodeToJsonElement(
+                                            BlobUploadedPayload.serializer(),
+                                            BlobUploadedPayload(
+                                                blobId = blob.blobId,
+                                                remoteKey = presign.key,
+                                            )
+                                        ),
+                                    ),
+                                    createdAtEpochMillis = clock.now().toEpochMilliseconds(),
+                                )
+                            )
                         } catch (throwable: Throwable) {
                             blobStore.updateStatus(blob.blobId, BlobStatus.FAILED, presign.key, blob.localPath)
                             throw throwable

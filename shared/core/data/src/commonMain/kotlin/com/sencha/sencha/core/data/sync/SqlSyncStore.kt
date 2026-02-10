@@ -161,6 +161,20 @@ class SqlSyncStore(
         )
     }
 
+    private fun com.sencha.sencha.core.data.sync.db.SelectPendingBlobs.toBlobRecord(): BlobRecord {
+        return BlobRecord(
+            blobId = blob_id,
+            chatId = chat_id,
+            sha256 = sha256,
+            size = size,
+            mime = mime,
+            localPath = local_path,
+            remoteKey = remote_key,
+            status = BlobStatus.valueOf(status),
+            createdAtEpochMillis = created_at,
+        )
+    }
+
     companion object {
         private const val KEY_LAST_ACK_CURSOR = "last_ack_cursor"
         private const val KEY_LAST_SYNC_AT = "last_sync_at"
