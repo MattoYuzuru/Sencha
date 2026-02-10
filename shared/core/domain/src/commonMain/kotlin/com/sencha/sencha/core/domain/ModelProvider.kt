@@ -20,4 +20,8 @@ interface ModelProvider {
     suspend fun listModels(): Result<List<ModelDescriptor>>
 
     fun createChatJob(request: ChatRequest): JobDefinition<ChatDelta>
+
+    fun createSttJob(request: SttRequest): JobDefinition<SttResult> = error("STT not supported")
+
+    fun createTtsJob(request: TtsRequest): JobDefinition<TtsResult> = error("TTS not supported")
 }

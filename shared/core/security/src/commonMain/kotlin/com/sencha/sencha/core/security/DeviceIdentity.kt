@@ -19,6 +19,12 @@ internal fun deviceIdFromPublicKey(publicKey: ByteArray): DeviceId {
     return DeviceId(digest.toHexString())
 }
 
+object Hashing {
+    fun sha256(data: ByteArray): ByteArray = Sha256.digest(data)
+
+    fun sha256Hex(data: ByteArray): String = Sha256.digest(data).toHexString()
+}
+
 fun ByteArray.toHexString(): String {
     val result = StringBuilder(size * 2)
     for (byte in this) {
