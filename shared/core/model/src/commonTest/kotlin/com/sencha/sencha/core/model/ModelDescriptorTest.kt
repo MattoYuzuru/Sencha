@@ -13,6 +13,7 @@ class ModelDescriptorTest {
             id = ModelId("local-llm"),
             displayName = "Local LLM",
             capabilities = setOf(ModelCapability.LLM, ModelCapability.VISION),
+            types = setOf(ModelType.CHAT),
         )
 
         assertTrue(ModelCapability.LLM in descriptor.capabilities)
@@ -25,6 +26,7 @@ class ModelDescriptorTest {
             id = ModelId("local-llm"),
             displayName = "Local LLM",
             capabilities = setOf(ModelCapability.LLM),
+            types = setOf(ModelType.CHAT),
             parameters = ModelParameters(temperature = 0.6, maxTokens = 512),
             resources = ModelResourceProfile(
                 minRamMb = 4096,
@@ -40,6 +42,20 @@ class ModelDescriptorTest {
                 sha256 = "deadbeef",
                 license = "Apache-2.0",
                 quantization = "Q4_K_M",
+            ),
+            sttCapabilities = SttCapabilities(
+                inputFormats = setOf("audio/mpeg"),
+                maxDurationMillis = 120000,
+                maxSizeBytes = 1024 * 1024,
+                languages = setOf("en"),
+                supportsDiarization = false,
+                supportsTimestamps = true,
+            ),
+            ttsCapabilities = TtsCapabilities(
+                voices = listOf(TtsVoice("default", "Default")),
+                outputFormats = setOf("audio/m4a"),
+                sampleRatesHz = setOf(24000),
+                maxChars = 2000,
             ),
         )
 

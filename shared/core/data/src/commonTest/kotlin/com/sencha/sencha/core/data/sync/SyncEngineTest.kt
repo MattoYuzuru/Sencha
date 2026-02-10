@@ -45,6 +45,7 @@ class SyncEngineTest {
             api = api,
             blobTransfer = FakeBlobTransfer(),
             jobEngine = InMemoryJobEngine(scope = this),
+            deviceId = "device-1",
         )
 
         val handle = engine.enqueueDownloadEvents()
@@ -64,6 +65,7 @@ class SyncEngineTest {
             api = api,
             blobTransfer = FakeBlobTransfer(),
             jobEngine = InMemoryJobEngine(scope = this),
+            deviceId = "device-1",
         )
 
         val handle = engine.enqueueUploadEvents()
@@ -108,6 +110,7 @@ class SyncEngineTest {
             api = api,
             blobTransfer = FakeBlobTransfer(),
             jobEngine = InMemoryJobEngine(scope = this),
+            deviceId = "device-1",
         )
 
         val handle = engine.enqueueBlobUploads()
@@ -210,6 +213,8 @@ private class FakeBlobStore : BlobStore {
 
 private class FakeBlobTransfer : BlobTransfer {
     override suspend fun upload(presign: PresignResponse, blob: BlobRecord) = Unit
+
+    override suspend fun download(presign: PresignResponse): ByteArray = ByteArray(0)
 }
 
 private class FakeSyncApi(

@@ -28,11 +28,13 @@ kotlin {
         commonMain.dependencies {
             api(projects.shared.core.model)
             implementation(projects.shared.core.jobs)
+            implementation(projects.shared.core.security)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
