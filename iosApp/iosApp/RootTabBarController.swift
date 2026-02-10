@@ -10,23 +10,27 @@ final class RootTabBarController: UITabBarController {
         networkMonitor.start()
 
         let chats = ChatsViewController(store: store, networkMonitor: networkMonitor)
+        let speech = SpeechViewController(networkMonitor: networkMonitor)
         let models = ModelsViewController(store: store, networkMonitor: networkMonitor)
         let connections = ConnectionsViewController(networkMonitor: networkMonitor)
 
         let chatsNav = UINavigationController(rootViewController: chats)
+        let speechNav = UINavigationController(rootViewController: speech)
         let modelsNav = UINavigationController(rootViewController: models)
         let connectionsNav = UINavigationController(rootViewController: connections)
 
         chatsNav.tabBarItem = UITabBarItem(title: "Чаты", image: UIImage(systemName: "bubble.left"), tag: 0)
-        modelsNav.tabBarItem = UITabBarItem(title: "Модели", image: UIImage(systemName: "slider.horizontal.3"), tag: 1)
-        connectionsNav.tabBarItem = UITabBarItem(title: "Связи", image: UIImage(systemName: "link"), tag: 2)
+        speechNav.tabBarItem = UITabBarItem(title: "Медиа", image: UIImage(systemName: "waveform"), tag: 1)
+        modelsNav.tabBarItem = UITabBarItem(title: "Модели", image: UIImage(systemName: "slider.horizontal.3"), tag: 2)
+        connectionsNav.tabBarItem = UITabBarItem(title: "Связи", image: UIImage(systemName: "link"), tag: 3)
 
         SenchaAppearance.applyNavigationBar(chatsNav.navigationBar)
+        SenchaAppearance.applyNavigationBar(speechNav.navigationBar)
         SenchaAppearance.applyNavigationBar(modelsNav.navigationBar)
         SenchaAppearance.applyNavigationBar(connectionsNav.navigationBar)
         SenchaAppearance.applyTabBar(tabBar)
 
-        viewControllers = [chatsNav, modelsNav, connectionsNav]
+        viewControllers = [chatsNav, speechNav, modelsNav, connectionsNav]
     }
 
     deinit {
