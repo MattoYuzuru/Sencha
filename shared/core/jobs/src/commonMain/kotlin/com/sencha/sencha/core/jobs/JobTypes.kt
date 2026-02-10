@@ -24,9 +24,13 @@ data class JobProgress(
 
 enum class JobErrorCode {
     NETWORK,
+    OFFLINE,
     OUT_OF_MEMORY,
     TIMEOUT,
     VALIDATION,
+    UNSUPPORTED_FORMAT,
+    TOO_LARGE,
+    REMOTE_ERROR,
     CANCELED,
     UNKNOWN,
 }
